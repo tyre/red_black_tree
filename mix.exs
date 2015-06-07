@@ -5,6 +5,7 @@ defmodule RedBlackTree.Mixfile do
     [app: :red_black_tree,
      version: "1.0",
      source_url: "https://github.com/SenecaSystems/red_black_tree",
+     description: "Red-Black trees: an ordered key-value store with O(log(N)) performance",
      elixir: "~> 1.0",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
