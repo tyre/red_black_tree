@@ -1,5 +1,7 @@
 # RedBlackTree
 
+[![Hex.pm](https://img.shields.io/hexpm/v/red_black_tree.svg)]](https://hex.pm/packages/red_black_tree) [![Travis](https://img.shields.io/travis/SenecaSystems/red_black_tree.svg)](https://travis-ci.org/SenecaSystems/red_black_tree) 
+
 Red-black tree implementation for Elixir.
 
 ## Install
