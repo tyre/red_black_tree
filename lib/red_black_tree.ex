@@ -640,3 +640,13 @@ defimpl Collectable, for: RedBlackTree do
     end}
   end
 end
+
+# We want our own inspect so that it will hide the implementation-specific
+# fields. Otherwise users may try to play with them directly.
+defimpl Inspect, for: RedBlackTree do
+  import Inspect.Algebra
+
+  def inspect(tree, opts) do
+    concat ["#RedBlackTree<", Inspect.List.inspect(RedBlackTree.to_list(tree), opts), ">"]
+  end
+end

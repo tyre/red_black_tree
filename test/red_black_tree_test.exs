@@ -112,6 +112,11 @@ defmodule RedBlackTreeTest do
     assert post_order_members == [:a, :c, :b, :e, :g, :f, :d]
   end
 
+  test "custom inspect" do
+    assert "#RedBlackTree<[a: 1, b: 2, c: 3]>" ==
+           inspect(RedBlackTree.new([b: 2, a: 1, c: 3]))
+  end
+
   test "altering depth" do
     tree = RedBlackTree.new()
     depth_aggregator = fn(%Node{key: key, depth: depth}, acc) ->
