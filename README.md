@@ -1,8 +1,17 @@
 # RedBlackTree
 
-Red-black tree implementation for Elixir. Provides an ordered key-value store
-with `O(log(N))` lookup, insert, and delete performance and `O(1)` size
-performance.
+Red-black tree implementation for Elixir.
+
+## Install
+
+Add the following to your mix.exs deps:
+
+`{:red_black_tree, "~> 1.0"}`
+
+## About
+
+Provides an ordered key-value store with `O(log(N))` lookup, insert, and delete
+performance and `O(1)` size performance.
 
 Keys are compared using strict equality (`===`), allowning for polymorphic
 keys in the same tree:
@@ -17,6 +26,7 @@ Implements the [Dict](http://elixir-lang.org/docs/stable/elixir/Dict.html)
 behavior, [Enumerable](http://elixir-lang.org/docs/stable/elixir/Enumerable.html)
 protocol, and the [Collectable](http://elixir-lang.org/docs/stable/elixir/Collectable.html)
 protocol.
+
 
 **Note**
 
