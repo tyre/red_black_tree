@@ -34,7 +34,7 @@ protocol.
 
 Due to the way Erlang, and therefore Elixir, implement comparisons for floats
 and integers, it is possible for a two keys to be equal (`key == other_key`)
-but not strictl equal (`key !== other_key`). To guarantee consistent ordering,
+but not strictly equal (`key !== other_key`). To guarantee consistent ordering,
 we must fallback to hashing keys that exhibit this property on comparison. In
 these rare cases, there will be a small performance penalty.
 
