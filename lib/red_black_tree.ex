@@ -1,8 +1,8 @@
 defmodule RedBlackTree do
   @moduledoc """
   Red-black trees are key-value stores.
-  While not guaranteed to be perfectly balanced, they guarantee O(log(n)) get
-  time.
+  While not guaranteed to be perfectly balanced, guarantees `O(log(N))` lookup,
+  insert, and delete performance and `O(1)` size performance.
 
   The RedBlackTree module contains an eponymous struct and various useful
   functions.
@@ -11,44 +11,87 @@ defmodule RedBlackTree do
   """
   alias RedBlackTree.Node
 
-  defstruct root: nil, size: 0
+  defstruct root: nil, size: 0, comparator: &__MODULE__.compare_terms/2
 
   use Dict
 
   @key_hash_bucket 4294967296
 
   # Inline key hashing
-  @compile {:inline, key_less_than?: 2, hash_key: 1, fallback_key_hash: 1}
+  @compile {:inline, hash_term: 1, fallback_term_hash: 1}
 
+  @doc """
+  Create a new RedBlackTree.
+  Can either be initialized with no values, with values, or with values and
+  options.
+  The passed in values can either be a list of `{key, value}` or a list of
+  elements. In the latter case, the elements will be their own keys.
+
+  ## Options
+    - `:comparator`
+      function that takes in two keys and returns:
+        + `0` if the keys should be considered equal
+        + `-1` if the first argument should be considered "less than" the second
+        + `1` if the second argument should be considered "greater than" the
+          first
+      By default, uses `RedBlackTree.compare_terms/2`, which compares the terms
+      according to Erlang's term precedence, using `:erlang.phash2/1` comparison
+      as a fallback for cases when `term1 == term2` but `term1 !== term2`.
+
+  ## Examples
+
+      iex> RedBlackTree.new
+      #RedBlackTree<[]>
+      iex> RedBlackTree.new([{:kind, :walrus}, {:name, :frank}, {:bubbles, 7}])
+      #RedBlackTree<[bubbles: 7, kind: :walrus, name: :frank]>
+      iex> RedBlackTree.new([1,2,3])
+      #RedBlackTree<[{1, 1}, {2, 2}, {3, 3}]>
+
+  Let's try out a comparator function that reverses the default ordering:
+
+      iex> RedBlackTree.new([{:kind, :walrus}, {:name, :frank}, {:bubbles, 7}],
+      ...>   comparator: fn (key1, key2) ->
+      ...>     RedBlackTree.compare_terms(key1, key2) * -1
+      ...>   end
+      ...> )
+      #RedBlackTree<[name: :frank, kind: :walrus, bubbles: 7]>
+  """
   def new() do
     %RedBlackTree{}
   end
 
-  def new(values) when is_list(values) do
-    new(%RedBlackTree{}, values)
+  def new(values, opts \\ [])
+  def new(values, opts) do
+    do_new(%RedBlackTree{
+      comparator: :proplists.get_value(:comparator, opts, &compare_terms/2)
+      }, values)
   end
 
-  defp new(tree, []) do
+  defp do_new(tree, []) do
     tree
   end
 
   # Allow initialization with key/value tuples
-  defp new(tree, [{key, value}|tail]) do
-    new(RedBlackTree.insert(tree, key, value), tail)
+  defp do_new(tree, [{key, value}|tail]) do
+    do_new(RedBlackTree.insert(tree, key, value), tail)
   end
 
   # Allow initialization with individual values, in which case they will be both
   # the key and the value
-  defp new(tree, [key|tail]) do
-    new(RedBlackTree.insert(tree, key, key), tail)
+  defp do_new(tree, [key|tail]) do
+    do_new(RedBlackTree.insert(tree, key, key), tail)
   end
 
-  def insert(%RedBlackTree{root: nil}, key, value) do
-    %RedBlackTree{root: Node.new(key, value), size: 1}
+  @doc """
+  Inserts the given key and value into the provided tree.
+  Returns the updated tree.
+  """
+  def insert(%RedBlackTree{root: nil}=tree, key, value) do
+    %RedBlackTree{tree | root: Node.new(key, value), size: 1}
   end
 
-  def insert(%RedBlackTree{root: root, size: size}=tree, key, value) do
-    {nodes_added, new_root} = do_insert(root, key, value, 1)
+  def insert(%RedBlackTree{root: root, size: size, comparator: comparator}=tree, key, value) do
+    {nodes_added, new_root} = do_insert(root, key, value, 1, comparator)
     %RedBlackTree{
       tree |
       root: make_node_black(new_root),
@@ -56,8 +99,10 @@ defmodule RedBlackTree do
     }
   end
 
-  def delete(%RedBlackTree{root: root, size: size}=tree, key) do
-    {nodes_removed, new_root} = do_delete(root, key)
+  # Deletes the given key and value from the provided tree.
+  # Returns the updated tree.
+  def delete(%RedBlackTree{root: root, size: size, comparator: comparator}=tree, key) do
+    {nodes_removed, new_root} = do_delete(root, key, comparator)
     %RedBlackTree{
       tree |
       root: new_root,
@@ -65,8 +110,10 @@ defmodule RedBlackTree do
     }
   end
 
-  def get(%RedBlackTree{root: root}, key) do
-    do_get(root, key)
+  # Returns the `value` associated with `key`.
+  # Returns `nil` if the key does not exist.
+  def get(%RedBlackTree{root: root, comparator: comparator}, key) do
+    do_get(root, key, comparator)
   end
 
 
@@ -102,62 +149,33 @@ defmodule RedBlackTree do
     has_key?(tree, key)
   end
 
-  defp do_get(nil, _key) do
+  defp do_get(nil, _key, _comparator) do
     nil
   end
 
-  defp do_get(%Node{key: node_key, value: value}, get_key) when node_key === get_key do
-    value
-  end
-
-  defp do_get(%Node{key: node_key, left: left}, get_key) when get_key < node_key do
-    do_get(left, get_key)
-  end
-
-  defp do_get(%Node{key: node_key, right: right}, get_key) when get_key > node_key do
-    do_get(right, get_key)
-  end
-
-  # For cases when `insert_key !== node_key` but `insert_key == node_key` (e.g.
-  # `1` and `1.0`,) hash the keys to provide consistent ordering.
-  defp do_get(%Node{key: node_key, left: left, right: right}, get_key) when get_key == node_key do
-    if key_less_than?(get_key, node_key) do
-      do_get(left, get_key)
-    else
-      do_get(right, get_key)
+  defp do_get(%Node{key: node_key, left: left, right: right, value: value}, get_key, comparator) do
+    case comparator.(get_key, node_key) do
+      0 -> value
+      -1 -> do_get(left, get_key, comparator)
+      1 -> do_get(right, get_key, comparator)
     end
   end
 
-  def has_key?(%RedBlackTree{root: root}, key) do
-    do_has_key?(root, key)
+  def has_key?(%RedBlackTree{root: root, comparator: comparator}, key) do
+    do_has_key?(root, key, comparator)
   end
 
-  defp do_has_key?(nil, _key) do
+  defp do_has_key?(nil, _key, _comparator) do
     false
   end
 
-  defp do_has_key?(%Node{key: node_key}, search_key) when node_key === search_key do
-    true
-  end
-
-  defp do_has_key?(%Node{key: node_key, left: left}, search_key) when search_key < node_key do
-    do_has_key?(left, search_key)
-  end
-
-  defp do_has_key?(%Node{key: node_key, right: right}, search_key) when search_key > node_key do
-    do_has_key?(right, search_key)
-  end
-
-  # For cases when `insert_key !== node_key` but `insert_key == node_key` (e.g.
-  # `1` and `1.0`,) hash the keys to provide consistent ordering.
-  defp do_has_key?(%Node{key: node_key, left: left, right: right}, search_key) when search_key == node_key do
-    if key_less_than?(search_key, node_key) do
-      do_has_key?(left, search_key)
-    else
-      do_has_key?(right, search_key)
+  defp do_has_key?(%Node{key: node_key, left: left, right: right}, search_key, comparator) do
+    case comparator.(search_key, node_key) do
+      0 -> true
+      -1 -> do_has_key?(left, search_key, comparator)
+      1 -> do_has_key?(right, search_key, comparator)
     end
   end
-
 
   @doc """
   For each node, calls the provided function passing in (node, acc)
@@ -201,37 +219,49 @@ defmodule RedBlackTree do
     Node.color(node, :black)
   end
 
+  @doc """
+  Compares two terms.
+  Returns `0` if they are strictly equal (`===`).
+  Returns `-1` if they the first argument is less than the second.
+  Returns `1` if they the first argument is greater than the second.
+
+  Falls back to `:erlang.phash2/1` in cases where
+  `term1 == term2 && term1 !== term2`. In case of key collisions, falls back
+  again to `:erlang.phash/1`.
+  """
+  def compare_terms(term1, term2) do
+    cond do
+      term1 === term2 -> 0
+      term1 < term2 -> -1
+      term1 > term2 -> 1
+      term1 == term2 ->
+        case compare_terms(hash_term(term1), hash_term(term2)) do
+          0 -> compare_terms(fallback_term_hash(term1), fallback_term_hash(term2))
+          hash_comparison_result -> hash_comparison_result
+        end
+    end
+  end
+
   # ¡This is only used as a tiebreaker!
   # For cases when `insert_key !== node_key` but `insert_key == node_key` (e.g.
   # `1` and `1.0`,) hash the keys to provide consistent ordering.
-  defp hash_key(key) do
-    :erlang.phash2(key, @key_hash_bucket)
+  defp hash_term(term) do
+    :erlang.phash2(term, @key_hash_bucket)
   end
 
-  # In the case that `hash_key(key1) == hash_key(key2)` we can fall back again
-  # to the slower phash function distributed over @key_hash_bucket integers.
+  # In the case that `hash_term(term1) == hash_term(term2)` we can fall back
+  # again to the slower phash function distributed over @key_hash_bucket
+  # integers.
   # If these two collide, go home.
-  defp fallback_key_hash(key) do
-    :erlang.phash(key, @key_hash_bucket)
-  end
-
-  # Should only be used when `key1 !== key2 and key1 == key2`. In the case
-  defp key_less_than?(key1, key2) do
-    hashed_key1 = hash_key(key1)
-    hashed_key2 = hash_key(key2)
-    cond do
-      hashed_key1 === hashed_key2 ->
-        fallback_key_hash(key1) < fallback_key_hash(key2)
-      hashed_key1 < hashed_key2 -> true
-      true -> false
-    end
+  defp fallback_term_hash(term) do
+    :erlang.phash(term, @key_hash_bucket)
   end
 
   ### Operations
 
   #### Insert
 
-  defp do_insert(nil, insert_key, insert_value, depth) do
+  defp do_insert(nil, insert_key, insert_value, depth, _comparator) do
     {
       1,
       %Node{
@@ -239,131 +269,101 @@ defmodule RedBlackTree do
         color: :red
       }
     }
-
   end
 
-  defp do_insert(%Node{key: node_key}=node, insert_key, insert_value, _depth) when node_key === insert_key do
-    {0, %Node{node | value: insert_value}}
-  end
-
-  defp do_insert(%Node{key: node_key}=node, insert_key, insert_value, depth) when insert_key < node_key do
-    do_insert_left(node, insert_key, insert_value, depth)
-  end
-
-  defp do_insert(%Node{key: node_key}=node, insert_key, insert_value, depth) when insert_key > node_key do
-    do_insert_right(node, insert_key, insert_value, depth)
-  end
-
-  # For cases when `insert_key !== node_key` but `insert_key == node_key` (e.g.
-  # `1` and `1.0`,) hash the keys to provide consistent ordering.
-  defp do_insert(%Node{key: node_key}=node, insert_key, insert_value, depth) when insert_key == node_key do
-    if key_less_than?(insert_key, node_key) do
-      do_insert_left(node, insert_key, insert_value, depth)
-    else
-      do_insert_right(node, insert_key, insert_value, depth)
+  defp do_insert(%Node{key: node_key}=node, insert_key, insert_value, depth, comparator) do
+    case comparator.(insert_key, node_key) do
+      0 -> {0, %Node{node | value: insert_value}}
+      -1 -> do_insert_left(node, insert_key, insert_value, depth, comparator)
+      1 -> do_insert_right(node, insert_key, insert_value, depth, comparator)
     end
   end
 
-  defp do_insert_left(%Node{left: left}=node, insert_key, insert_value, depth) do
-    {nodes_added, new_left} = do_insert(left, insert_key, insert_value, depth + 1)
+  defp do_insert_left(%Node{left: left}=node, insert_key, insert_value, depth, comparator) do
+    {nodes_added, new_left} = do_insert(left, insert_key, insert_value, depth + 1, comparator)
     {nodes_added, %Node{node | left: do_balance(new_left)}}
   end
 
-  defp do_insert_right(%Node{right: right}=node, insert_key, insert_value, depth) do
-    {nodes_added, new_right} = do_insert(right, insert_key, insert_value, depth + 1)
+  defp do_insert_right(%Node{right: right}=node, insert_key, insert_value, depth, comparator) do
+    {nodes_added, new_right} = do_insert(right, insert_key, insert_value, depth + 1, comparator)
     {nodes_added, %Node{node | right: do_balance(new_right)}}
   end
 
   #### Delete
 
   # If we reach a leaf and the key never matched, do nothing
-  defp do_delete(nil, _key) do
+  defp do_delete(nil, _key, _comparator) do
     {0, nil}
   end
 
-  # If both the right and left are nil, the new tree is nil. For example,
-  # deleting A in the following tree results in B having no left
-  #
-  #        B
-  #       / \
-  #      A   C
-  #
-  defp do_delete(%Node{key: node_key, left: nil, right: nil}, delete_key) when node_key === delete_key do
-    {1, nil}
-  end
-
-  # If left is nil and there is a right, promote the right. For example,
-  # deleting C in the following tree results in B's right becoming D
-  #
-  #        B
-  #       / \
-  #      A   C
-  #           \
-  #            D
-  #
-  defp do_delete(%Node{key: node_key, left: nil, right: right}, delete_key) when node_key === delete_key do
-    {1, %Node{right | depth: right.depth - 1}}
-  end
-
-  # If there is a left promote it. For example,
-  # deleting B in the following tree results in C's left becoming A
-  #
-  #        C
-  #       / \
-  #      B   D
-  #     /
-  #    A
-  #
-  defp do_delete(%Node{key: node_key, left: left, right: nil}, delete_key) when node_key === delete_key do
-    {1, %Node{left | depth: left.depth - 1}}
-  end
-
-  # If there are both left and right nodes, recursively promote the left-most
-  # nodes. For example, deleting E below results in the following:
-  #
-  #        G      =>         G
-  #       / \               / \
-  #      E   H    =>       C   H
-  #     / \               / \
-  #    C   F      =>     B   D
-  #   / \               /     \
-  #  A   D        =>   A       F
-  #   \
-  #    B
-  #
-  #
-  defp do_delete(%Node{key: node_key, left: left, right: right}, delete_key) when node_key === delete_key do
-    {
-      1,
-      do_balance(%Node{
-        left |
-        depth: left.depth - 1,
-        left: do_balance(promote(left)),
-        right: right
-      })
-    }
-  end
-
-  defp do_delete(%Node{key: node_key}=node, delete_key) when delete_key < node_key do
-    do_delete_left(node, delete_key)
-  end
-
-  defp do_delete(%Node{key: node_key}=node, delete_key) when delete_key > node_key do
-    do_delete_right(node, delete_key)
-  end
-
-  # For cases when `delete_key !== node_key` but `delete_key == node_key` (e.g.
-  # `1` and `1.0`,) hash the keys to provide consistent ordering.
-  defp do_delete(%Node{key: node_key}=node, delete_key) when delete_key == node_key do
-    if key_less_than?(delete_key, node_key) do
-      do_delete_left(node, delete_key)
-    else
-      do_delete_right(node, delete_key)
+  defp do_delete(%Node{key: node_key}=node, delete_key, comparator) do
+    case comparator.(delete_key, node_key) do
+      0 -> do_delete_node(node)
+      -1 -> do_delete_left(node, delete_key, comparator)
+      1 -> do_delete_right(node, delete_key, comparator)
     end
   end
 
-  defp do_delete_left(%Node{left: left}=node, delete_key) do
-    {nodes_removed, new_left} = do_delete(left, delete_key)
+  defp do_delete_node(%Node{left: left, right: right}) do
+    cond do
+      # If both the right and left are nil, the new tree is nil. For example,
+      # deleting A in the following tree results in B having no left
+      #
+      #        B
+      #       / \
+      #      A   C
+      #
+      (left === nil && right === nil) -> {1, nil}
+
+      # If left is nil and there is a right, promote the right. For example,
+      # deleting C in the following tree results in B's right becoming D
+      #
+      #        B
+      #       / \
+      #      A   C
+      #           \
+      #            D
+      #
+      (left === nil && right) -> {1, %Node{right | depth: right.depth - 1}}
+      # If there is only a left promote it. For example,
+      # deleting B in the following tree results in C's left becoming A
+      #
+      #        C
+      #       / \
+      #      B   D
+      #     /
+      #    A
+      #
+      (left && right === nil) -> {1, %Node{left | depth: left.depth - 1}}
+      # If there are both left and right nodes, recursively promote the left-most
+      # nodes. For example, deleting E below results in the following:
+      #
+      #        G      =>         G
+      #       / \               / \
+      #      E   H    =>       C   H
+      #     / \               / \
+      #    C   F      =>     B   D
+      #   / \               /     \
+      #  A   D        =>   A       F
+      #   \
+      #    B
+      #
+      #
+      true ->
+        {
+          1,
+          do_balance(%Node{
+            left |
+            depth: left.depth - 1,
+            left: do_balance(promote(left)),
+            right: right
+          })
+        }
+    end
+  end
+
+  defp do_delete_left(%Node{left: left}=node, delete_key, comparator) do
+    {nodes_removed, new_left} = do_delete(left, delete_key, comparator)
     {
       nodes_removed,
       %Node{
@@ -373,8 +373,8 @@ defmodule RedBlackTree do
     }
   end
 
-  defp do_delete_right(%Node{right: right}=node, delete_key) do
-    {nodes_removed, new_right} = do_delete(right, delete_key)
+  defp do_delete_right(%Node{right: right}=node, delete_key, comparator) do
+    {nodes_removed, new_right} = do_delete(right, delete_key, comparator)
     {
       nodes_removed,
       %Node{
