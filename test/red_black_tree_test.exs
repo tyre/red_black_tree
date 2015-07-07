@@ -2,6 +2,7 @@ defmodule RedBlackTreeTest do
   use ExUnit.Case, async: true
   alias RedBlackTree.Node
   doctest Dict
+  doctest RedBlackTree
   defp dict_impl, do: RedBlackTree
 
   test "initializing a red black tree" do
@@ -139,6 +140,23 @@ defmodule RedBlackTreeTest do
   test "has_key?" do
     assert RedBlackTree.has_key?(RedBlackTree.new([a: 1, b: 2]), :b)
     assert not RedBlackTree.has_key?(RedBlackTree.new([a: 1, b: 2]), :c)
+  end
+
+  test "with a custom comparator" do
+    comparison = fn (key1, key2) ->
+      cond do
+        key1 < key2 -> 1
+        key1 > key2 -> -1
+        true -> 0
+      end
+    end
+    tree = RedBlackTree.new([], comparator: comparison)
+    tree_as_list = tree
+      |> RedBlackTree.insert(1, 3)
+      |> RedBlackTree.insert(5, 1)
+      |> RedBlackTree.insert(3, 2)
+      |> RedBlackTree.to_list
+    assert [{5, 1}, {3, 2}, {1, 3}] == tree_as_list
   end
 
   #
@@ -294,7 +312,11 @@ defmodule RedBlackTreeTest do
 
   test "implements Collectable" do
     members = [d: 1, b: 2, f: 3, g: 4, c: 5, a: 6, e: 7]
-    assert Enum.into(members, RedBlackTree.new) == RedBlackTree.new(members)
+    tree1 = Enum.into(members, RedBlackTree.new)
+    tree2 = RedBlackTree.new(members)
+
+    # The trees won't be identical due to the comparator function
+    assert RedBlackTree.to_list(tree1) == RedBlackTree.to_list(tree2)
   end
 
   test "implements Access" do
