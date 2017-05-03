@@ -1,9 +1,7 @@
 defmodule RedBlackTreeTest do
   use ExUnit.Case, async: true
   alias RedBlackTree.Node
-  doctest Dict
   doctest RedBlackTree
-  defp dict_impl, do: RedBlackTree
 
   test "initializing a red black tree" do
     assert %RedBlackTree{} == RedBlackTree.new
