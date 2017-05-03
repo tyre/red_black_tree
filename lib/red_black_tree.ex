@@ -13,9 +13,9 @@ defmodule RedBlackTree do
 
   defstruct root: nil, size: 0, comparator: &__MODULE__.compare_terms/2
 
-  use Dict
-
   @key_hash_bucket 4294967296
+
+  @behaviour Access
 
   # Inline key hashing
   @compile {:inline, hash_term: 1, fallback_term_hash: 1}
@@ -116,8 +116,6 @@ defmodule RedBlackTree do
     do_get(root, key, comparator)
   end
 
-
-  ## Dict behaviour functions
   def size(%RedBlackTree{size: size}) do
     size
   end
@@ -125,6 +123,13 @@ defmodule RedBlackTree do
   def put(tree, key, value) do
     insert(tree, key, value)
   end
+
+  def reduce(tree, acc, fun) do
+    RedBlackTree.to_list(tree)
+    |> Enumerable.List.reduce(acc, fun)
+  end
+
+  ## Access behaviour functions
 
   def fetch(tree, key) do
     if has_key?(tree, key) do
@@ -134,9 +139,22 @@ defmodule RedBlackTree do
     end
   end
 
-  def reduce(tree, acc, fun) do
-    RedBlackTree.to_list(tree)
-    |> Enumerable.List.reduce(acc, fun)
+  def get(tree, key, default) do
+    case fetch(tree, key) do
+      {:ok, val} -> val
+      :error -> default
+    end
+  end
+
+  def get_and_update(tree, key, fun) do
+    {get, update} = fun.(RedBlackTree.get(tree, key))
+    {get, RedBlackTree.insert(tree, key, update)}
+  end
+
+  def pop(tree, key) do
+    value = RedBlackTree.get(tree, key, :error)
+    new_tree = RedBlackTree.delete(tree, key)
+    {value, new_tree}
   end
 
   ## Tree behaviour functions
@@ -612,6 +630,7 @@ defmodule RedBlackTree do
     acc_after_right = do_reduce_nodes(:post_order, right, acc_after_left, fun)
     fun.(node, acc_after_right)
   end
+
 end
 
 defimpl Enumerable, for: RedBlackTree do
@@ -629,6 +648,7 @@ defimpl Collectable, for: RedBlackTree do
     end}
   end
 end
+
 
 # We want our own inspect so that it will hide the implementation-specific
 # fields. Otherwise users may try to play with them directly.
