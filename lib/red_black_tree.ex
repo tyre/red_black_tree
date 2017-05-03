@@ -620,17 +620,6 @@ defimpl Enumerable, for: RedBlackTree do
   def reduce(tree, acc, fun), do: RedBlackTree.reduce(tree, acc, fun)
 end
 
-defimpl Access, for: RedBlackTree do
-  def get(tree, key) do
-    RedBlackTree.get(tree, key)
-  end
-
-  def get_and_update(tree, key, fun) do
-    {get, update} = fun.(RedBlackTree.get(tree, key))
-    {get, RedBlackTree.insert(tree, key, update)}
-  end
-end
-
 defimpl Collectable, for: RedBlackTree do
   def into(original) do
     {original, fn
