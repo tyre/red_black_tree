@@ -225,10 +225,21 @@ defmodule RedBlackTree do
     %RedBlackTree{tree | root: do_balance(root)}
   end
 
-  def to_list(%RedBlackTree{}=tree) do
-    reduce_nodes(tree, [], fn (node, members) ->
-      [{node.key, node.value} | members]
-    end) |> Enum.reverse
+  @doc """
+  Converts a `%RedBlackTree{}` to a list.
+
+  Options available:
+  - `:order` - available options are `:in_order`, `:pre_order`, or `:post_order`
+    Defaults to `:in_order` if no order is given.
+  """
+  def to_list(%RedBlackTree{}=tree, opts \\ []) do
+    opts
+    |> Keyword.get(:order, :in_order)
+    |> reduce_nodes(tree, [],
+      fn (node, members) ->
+        [{node.key, node.value} | members]
+      end)
+    |> Enum.reverse
   end
 
   ## Helpers
